@@ -12,4 +12,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 96322e82a588b17418806427b0569a8a, type: 3}
   m_Name: MataRenderPipelineAsset
   m_EditorClassIdentifier: 
-  clear: {r: 0, g: 1, b: 0, a: 1}
+  clear: {r: 0, g: 0, b: 0, a: 1}
