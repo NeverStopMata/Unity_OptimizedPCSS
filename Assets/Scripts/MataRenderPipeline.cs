@@ -19,10 +19,52 @@ public class MataRenderPipeline : RenderPipeline
     public override void Render(ScriptableRenderContext context, Camera[] cameras)
     {
         base.Render(context, cameras);
-        var clearCmd = new CommandBuffer { name = "Clear(SRP-CommandBuffer)" };
-        clearCmd.ClearRenderTarget(true, true, pipelineAsset.clear);
-        context.ExecuteCommandBuffer(clearCmd);
-        clearCmd.Release();//dispose
-        context.Submit();
+        BeginFrameRendering(cameras);
+        foreach (var camera in cameras)
+        {
+            BeginCameraRendering(camera);
+
+            ScriptableCullingParameters cullingParameters;
+            if (!CullResults.GetCullingParameters(camera, out cullingParameters))
+                continue;
+            CullResults cullResults = new CullResults();
+            CullResults.Cull(ref cullingParameters, context, ref cullResults);
+
+            context.SetupCameraProperties(camera);
+
+            var clearCmd = new CommandBuffer { name = "Clear(SRP-CommandBuffer)" };
+            clearCmd.ClearRenderTarget(true, false, Color.black);
+            context.ExecuteCommandBuffer(clearCmd);
+            clearCmd.Release();//dispose
+
+            // Draw opaque objects using BasicLightMode shader pass
+            var filterSettings = new FilterRenderersSettings(true);
+            var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("BasicLightMode"))
+            {
+                rendererConfiguration = RendererConfiguration.PerObjectLightProbe | RendererConfiguration.PerObjectLightmaps,
+            };
+
+            // draw opaque objects
+            {
+
+                filterSettings.renderQueueRange = RenderQueueRange.opaque;
+                drawSettings.sorting.flags = SortFlags.CommonOpaque;
+                context.DrawRenderers(cullResults.visibleRenderers, ref drawSettings, filterSettings);
+            }
+
+            // draw skybox
+            if (camera.clearFlags == CameraClearFlags.Skybox)
+                context.DrawSkybox(camera);
+
+            // draw transparent objects
+            {
+
+                filterSettings.renderQueueRange = RenderQueueRange.transparent;
+                drawSettings.sorting.flags = SortFlags.CommonTransparent;
+                context.DrawRenderers(cullResults.visibleRenderers, ref drawSettings, filterSettings);
+            }
+
+            context.Submit();
+        }
     }
 }
