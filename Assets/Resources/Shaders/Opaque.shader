@@ -1,14 +1,14 @@
-﻿Shader "Common/Opaque"
+﻿Shader "MataPBR/Opaque"
 {
 	Properties
 	{
-		_Color("Color",Color) = (1,1,1,1)
-		_Metallic("Metallic",Range(0,1)) = 0
+		_BaseColor("Color",Color) = (1,1,1,1)
+		_Metalness("Metallic",Range(0,1)) = 0
 		_Roughness("Roughness",Range(0,1)) = 0
 	}
 		SubShader
 	{
-		Tags { "RenderType" = "Opaque" "Queue" = "Geometry" "LightMode" = "BasicLightMode" }
+		Tags { "RenderType" = "Opaque" "Queue" = "Geometry" "LightMode" = "ForwardBase" }
 		LOD 100
 
 		Pass
@@ -20,12 +20,11 @@
 
 			#include "UnityCG.cginc"
 			#include "UnityStandardCore.cginc"
+			#include "MataIncludes/MataPBRStandardCore.cginc"
 			#include "AutoLight.cginc"
-
-
-			//uniform float _Metallic;
+			uniform float4 _BaseColor;
+			uniform float _Metalness;
 			uniform float _Roughness;
-
 			struct VertexOutput
 			{
 				float4 pos				: SV_POSITION;
@@ -48,32 +47,51 @@
 			
 			fixed4 frag (VertexOutput i) : SV_Target
 			{
-				UnityLight mainLight = (UnityLight)0;
-				mainLight.color = _LightColor0.rgb;
-				mainLight.dir = _WorldSpaceLightPos0.xyz;
-				half oneMinusReflectivity;
-				half3 specColor;
-				half3 diffColor;
-				half occlusion;
-				half atten = 1;
-				occlusion = 1;
-				diffColor = DiffuseAndSpecularFromMetallic(_Color, _Metallic, specColor, oneMinusReflectivity);
-				FragmentCommonData s = (FragmentCommonData)0;
-				s.diffColor = diffColor;
-				s.specColor = specColor;
-				s.oneMinusReflectivity = oneMinusReflectivity;
-				s.smoothness = 1 - _Roughness;
-				s.normalWorld = i.normalWorld;
-				s.eyeVec = normalize(i.posWorld - _WorldSpaceCameraPos); 
-				s.posWorld = i.posWorld;
 
-				
+				float3 albedo = _BaseColor.rgb;
+				float metalness = _Metalness;
+				float roughness = max(_Roughness,0.04);
+				float3 V = normalize(_WorldSpaceCameraPos - i.posWorld);
+				float3 N = normalize(i.normalWorld);
+				float NoV = max(0.0, dot(N, V));
+				float3 R = 2.0 * NoV * N - V; //reflection dir of eye direction.
+				float3 F0 = lerp((float3)0.04, albedo, metalness);
 
-				UnityGI gi = FragmentGI(s, occlusion, 0, atten, mainLight, true);
-				half4 c = UNITY_BRDF_PBS(s.diffColor, s.specColor, s.oneMinusReflectivity, s.smoothness, s.normalWorld, s.eyeVec, gi.light, gi.indirect);
-				UNITY_APPLY_FOG(i.fogCoord, c.rgb);
-				
-				return OutputForward(c, 1);
+				float3 directOutput = (float3)0;
+				UnityLight mainLight = MainLight();
+				float3 L = mainLight.dir;
+				float3 lightRadiance = mainLight.color;
+
+				// Half-vector between Li and Lo.
+				float3 H = normalize(L + V);
+				// Calculate angles between surface normal and various light vectors.
+				float NoL = max(0.0, dot(N, L));
+				float NoH = max(0.0, dot(N, H));
+
+				// Calculate Fresnel term for direct lighting. 
+				float3 F  = F_Schlick(F0, max(0.0, dot(H, V)));
+				// Calculate normal distribution for specular BRDF.
+				float D = D_GGX(NoH, roughness);
+				float Vis =  Vis_SmithJoint(roughness,  NoV,  NoL);
+				// Diffuse scattering happens due to light being refracted multiple times by a dielectric medium.
+				// Metals on the other hand either reflect or absorb energy, so diffuse contribution is always zero.
+				// To be energy conserving we must scale diffuse BRDF contribution based on Fresnel factor & metalness.
+				float3 kd = lerp((float3)1.0 - F, (float3)0.0, metalness);
+				// Lambert diffuse BRDF.
+				// We don't scale by 1/PI for lighting & material units to be more convenient.
+				// See: https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/
+				float3 diffuseBRDF = kd * albedo;
+
+				// Cook-Torrance specular microfacet BRDF.
+				float3 specularBRDF = F * D * Vis;
+				// Total contribution for this light.
+
+				//  half3 color =   diffColor * (gi.diffuse + light.color * diffuseTerm)
+                //     + specularTerm * light.color * FresnelTerm (specColor, lh)
+                //     + surfaceReduction * gi.specular * FresnelLerp (specColor, grazingTerm, nv);
+				directOutput += (diffuseBRDF + specularBRDF) * lightRadiance * NoL;
+				return OutputForward(half4(directOutput,1), 1);
+
 			}
 			ENDCG
 		}

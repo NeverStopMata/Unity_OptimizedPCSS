@@ -39,7 +39,7 @@ public class MataRenderPipeline : RenderPipeline
 
             // Draw opaque objects using BasicLightMode shader pass
             var filterSettings = new FilterRenderersSettings(true);
-            var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("BasicLightMode"))
+            var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("ForwardBase"))
             {
                 rendererConfiguration = RendererConfiguration.PerObjectLightProbe | RendererConfiguration.PerObjectLightmaps,
             };
