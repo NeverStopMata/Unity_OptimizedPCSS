@@ -58,14 +58,17 @@ inline float3 Diffuse_OrenNayar( float3 DiffuseColor, float Roughness, float NoV
 inline float3 BoxProjectedCubemapDirct (float3 worldRefl, float3 worldPos, float4 cubemapCenter, float4 boxMin, float4 boxMax)
 {
 
-    float3 nrdir = normalize(worldRefl);
-    float3 rbmax = (boxMax.xyz - worldPos) / nrdir;
-    float3 rbmin = (boxMin.xyz - worldPos) / nrdir;
-    float3 rbminmax = (nrdir > 0.0f) ? rbmax : rbmin;
-    float fa = min(min(rbminmax.x, rbminmax.y), rbminmax.z);
-    worldPos -= cubemapCenter.xyz;
-    worldRefl = worldPos + nrdir * fa;
-    
+	UNITY_BRANCH
+    if (cubemapCenter.w > 0.0)
+    {
+    	float3 nrdir = normalize(worldRefl);
+    	float3 rbmax = (boxMax.xyz - worldPos) / nrdir;
+ 		float3 rbmin = (boxMin.xyz - worldPos) / nrdir;
+    	float3 rbminmax = (nrdir > 0.0f) ? rbmax : rbmin;
+    	float fa = min(min(rbminmax.x, rbminmax.y), rbminmax.z);
+    	worldPos -= cubemapCenter.xyz;
+    	worldRefl = worldPos + nrdir * fa;
+	}
     return worldRefl;
 }
 
@@ -99,7 +102,7 @@ half3 Mata_GlossyEnvironment (UNITY_ARGS_TEXCUBE(tex), half4 hdr, float3 reflUVW
 inline half3 MataGI_IndirectSpecular(float3 originalReflUVW,float3 worldPos, half occlusion, float roughness)
 {
     half3 specular;
-    float3 reflUVW = originalReflUVW;//BoxProjectedCubemapDirct (originalReflUVW, worldPos, unity_SpecCube0_ProbePosition, unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax);
+    float3 reflUVW = BoxProjectedCubemapDirct (originalReflUVW, worldPos, unity_SpecCube0_ProbePosition, unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax);
     specular = Mata_GlossyEnvironment (UNITY_PASS_TEXCUBE(unity_SpecCube0), unity_SpecCube0_HDR, reflUVW,roughness);  
     return specular * occlusion;
 }
