@@ -50,12 +50,14 @@
 
 				float3 albedo = _BaseColor.rgb;
 				float metalness = _Metalness;
-				float roughness = max(_Roughness,0.04);
+				float perceptualRoughness = _Roughness;
+				half smoothness = 1- perceptualRoughness;
+				float roughness = max(perceptualRoughness * perceptualRoughness, 0.002);
 				float3 V = normalize(_WorldSpaceCameraPos - i.posWorld);
 				float3 N = normalize(i.normalWorld);
 				float NoV = max(0.0, dot(N, V));
 				float3 R = 2.0 * NoV * N - V; //reflection dir of eye direction.
-				float3 F0 = lerp((float3)0.04, albedo, metalness);
+				float3 F0 = lerp(mata_ColorSpaceDielectricSpec.rgb, albedo, metalness);//高光反射率
 
 				float3 directOutput = (float3)0;
 				UnityLight mainLight = MainLight();
@@ -67,7 +69,7 @@
 				// Calculate angles between surface normal and various light vectors.
 				float NoL = max(0.0, dot(N, L));
 				float NoH = max(0.0, dot(N, H));
-
+				float VoH = max(0.0, dot(V, H));
 				// Calculate Fresnel term for direct lighting. 
 				float3 F  = F_Schlick(F0, max(0.0, dot(H, V)));
 				// Calculate normal distribution for specular BRDF.
@@ -80,17 +82,32 @@
 				// Lambert diffuse BRDF.
 				// We don't scale by 1/PI for lighting & material units to be more convenient.
 				// See: https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/
-				float3 diffuseBRDF = kd * albedo;
-
+				float3 diffuseBRDF = Diffuse_Burley( kd * albedo, perceptualRoughness, NoV, NoL, VoH );
+				//float3 diffuseBRDF = Diffuse_Lambert(kd * albedo);
+				float3 diffuseColorForIndirect = lerp(albedo.rgb * unity_ColorSpaceDielectricSpec.a, (float3)0.0, metalness);
 				// Cook-Torrance specular microfacet BRDF.
 				float3 specularBRDF = F * D * Vis;
+				
 				// Total contribution for this light.
 
 				//  half3 color =   diffColor * (gi.diffuse + light.color * diffuseTerm)
                 //     + specularTerm * light.color * FresnelTerm (specColor, lh)
                 //     + surfaceReduction * gi.specular * FresnelLerp (specColor, grazingTerm, nv);
 				directOutput += (diffuseBRDF + specularBRDF) * lightRadiance * NoL;
-				return OutputForward(half4(directOutput,1), 1);
+				
+				//indirect light evaluate
+				UnityIndirect indirect = (UnityIndirect)0;
+				indirect.diffuse = ShadeSH9(half4(N,1.0));
+				
+				half surfaceReduction;
+        		surfaceReduction = 2.0 / (roughness*roughness + 1.0) - 1.0;           // fade \in [0.0;1.0]
+				half oneMinusReflectivity = OneMinusReflectivityFromMetalness(metalness);
+				half grazingTerm = saturate(smoothness + (1-oneMinusReflectivity));
+				indirect.specular = MataGI_IndirectSpecular(R,i.posWorld, 1, roughness);
+				half3 color  = directOutput
+							 + indirect.diffuse * diffuseColorForIndirect
+							 + indirect.specular * surfaceReduction * FresnelLerp (F0, grazingTerm, NoV);
+				return OutputForward(half4(color,1), 1);
 
 			}
 			ENDCG
