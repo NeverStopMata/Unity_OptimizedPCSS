@@ -3,11 +3,11 @@
 #define mata_ColorSpaceDielectricSpec half4(0.04, 0.04, 0.04, 1.0 - 0.04) // standard dielectric reflectivity coef at incident angle (= 4%)
 // GGX/Towbridge-Reitz normal distribution function.
 // Uses Disney's reparametrization of alpha = roughness^2.
-inline float D_GGX(float NoH, float roughness)
+inline float D_GGX(float NoH_squared, float roughness)
 {
 	float alpha   = roughness * roughness;
 
-	float denom = (NoH * NoH) * (alpha - 1.0) + 1.0;
+	float denom = NoH_squared * (alpha - 1.0) + 1.0;
 	return alpha / (PI * denom * denom);
 }
 
@@ -127,4 +127,39 @@ inline half OneMinusReflectivityFromMetalness(half metalness)
     return oneMinusDielectricSpec - metalness * oneMinusDielectricSpec;
 }
 
+inline float GetNoHSquared(float radiusTan, float NoL, float NoV, float VoL)
+{
+    // radiusCos can be precalculated if radiusTan is a directional light
+    float radiusCos = rsqrt(1.0 + radiusTan * radiusTan);
+    
+    // Early out if R falls within the disc
+    float RoL = 2.0 * NoL * NoV - VoL;
+    if (RoL >= radiusCos)
+        return 1.0;
+    float rOverLengthT = radiusCos * radiusTan * rsqrt(1.0 - RoL * RoL);
+    float NoTr = rOverLengthT * (NoV - RoL * NoL);
+    float VoTr = rOverLengthT * (2.0 * NoV * NoV - 1.0 - RoL * VoL);
 
+    // Calculate dot(cross(N, L), V). This could already be calculated and available.
+    float triple = sqrt(saturate(1.0 - NoL * NoL - NoV * NoV - VoL * VoL + 2.0 * NoL * NoV * VoL));
+    
+    // Do one Newton iteration to improve the bent light vector
+    float NoBr = rOverLengthT * triple, VoBr = rOverLengthT * (2.0 * triple * NoV);
+    float NoLVTr = NoL * radiusCos + NoV + NoTr, VoLVTr = VoL * radiusCos + 1.0 + VoTr;
+    float p = NoBr * VoLVTr, q = NoLVTr * VoLVTr, s = VoBr * NoLVTr;    
+    float xNum = q * (-0.5 * p + 0.25 * VoBr * NoLVTr);
+    float xDenom = p * p + s * ((s - 2.0 * p)) + NoLVTr * ((NoL * radiusCos + NoV) * VoLVTr * VoLVTr + 
+                   q * (-0.5 * (VoLVTr + VoL * radiusCos) - 0.5));
+    float twoX1 = 2.0 * xNum / (xDenom * xDenom + xNum * xNum);
+    float sinTheta = twoX1 * xDenom;
+    float cosTheta = 1.0 - twoX1 * xNum;
+    NoTr = cosTheta * NoTr + sinTheta * NoBr; // use new T to update NoTr
+    VoTr = cosTheta * VoTr + sinTheta * VoBr; // use new T to update VoTr
+    
+    // Calculate (N.H)^2 based on the bent light vector
+    float newNoL = NoL * radiusCos + NoTr;
+    float newVoL = VoL * radiusCos + VoTr;
+    float NoH = NoV + newNoL;
+    float HoH = 2.0 * newVoL + 2.0;
+    return max(0.0, NoH * NoH / HoH);
+}

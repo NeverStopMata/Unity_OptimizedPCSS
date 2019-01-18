@@ -5,6 +5,7 @@
 		_BaseColor("Color",Color) = (1,1,1,1)
 		_Metalness("Metallic",Range(0,1)) = 0
 		_Roughness("Roughness",Range(0,1)) = 0
+		_LightTan("lightRadius / lightDiatance",Range(0,0.1)) = 0
 	}
 		SubShader
 	{
@@ -25,6 +26,7 @@
 			uniform float4 _BaseColor;
 			uniform float _Metalness;
 			uniform float _Roughness;
+			uniform float _LightTan;
 			struct VertexOutput
 			{
 				float4 pos				: SV_POSITION;
@@ -47,7 +49,6 @@
 			
 			fixed4 frag (VertexOutput i) : SV_Target
 			{
-
 				float3 albedo = _BaseColor.rgb;
 				float metalness = _Metalness;
 				float perceptualRoughness = _Roughness;
@@ -55,7 +56,7 @@
 				float roughness = max(perceptualRoughness * perceptualRoughness, 0.002);
 				float3 V = normalize(_WorldSpaceCameraPos - i.posWorld);
 				float3 N = normalize(i.normalWorld);
-				float NoV = max(0.0, dot(N, V));
+				float NoV = dot(N, V);
 				float3 R = 2.0 * NoV * N - V; //reflection dir of eye direction.
 				float3 F0 = lerp(mata_ColorSpaceDielectricSpec.rgb, albedo, metalness);//高光反射率
 
@@ -69,11 +70,16 @@
 				// Calculate angles between surface normal and various light vectors.
 				float NoL = max(0.0, dot(N, L));
 				float NoH = max(0.0, dot(N, H));
-				float VoH = max(0.0, dot(V, H));
+				float NoH_squared = NoH * NoH;
+				float VoH = dot(V, H);
+				float VoL = dot(V, L);
 				// Calculate Fresnel term for direct lighting. 
 				float3 F  = F_Schlick(F0, max(0.0, dot(H, V)));
 				// Calculate normal distribution for specular BRDF.
-				float D = D_GGX(NoH, roughness);
+				float radius_tan = max(0.001,_LightTan - perceptualRoughness *0.25); // light radius is made smaller for rougher materials
+				float maxNoH_squared = GetNoHSquared(radius_tan,  NoL,  NoV,  VoL);
+				NoH_squared = maxNoH_squared;
+				float D = D_GGX(NoH_squared, roughness);
 				float Vis =  Vis_SmithJoint(roughness,  NoV,  NoL);
 				// Diffuse scattering happens due to light being refracted multiple times by a dielectric medium.
 				// Metals on the other hand either reflect or absorb energy, so diffuse contribution is always zero.
