@@ -23,6 +23,7 @@ inline float3 F_Schlick( float3 SpecularColor, float VoH )
 
 inline half Vis_SmithJoint (float Roughness, float NoV, float NoL )
 {
+
     // Approximation of the above formulation (simplify the sqrt, not mathematically correct but close enough)
     half a = Roughness;
     half lambdaV = NoL * (NoV * (1 - a) + a);

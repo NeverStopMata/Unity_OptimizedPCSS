@@ -10,7 +10,6 @@ using UnityEngine.Rendering;
 public class MataRenderPipeline : RenderPipeline
 {
     private readonly MataRenderPipelineAsset pipelineAsset;
-
     public MataRenderPipeline(MataRenderPipelineAsset asset)
     {
         pipelineAsset = asset;
@@ -39,7 +38,7 @@ public class MataRenderPipeline : RenderPipeline
 
             // Draw opaque objects using BasicLightMode shader pass
             var filterSettings = new FilterRenderersSettings(true);
-            var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("MataBase"))
+            var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("ForwardBase"))
             {
                 rendererConfiguration = RendererConfiguration.PerObjectReflectionProbes | RendererConfiguration.PerObjectLightProbe,
             };
